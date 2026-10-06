@@ -94,6 +94,9 @@ kp18058:
   `analog` changes the current amplitude, `chop` changes the duty cycle.
 - **chop_frequency** (*Optional*, default `500hz`): Chop frequency for
   `rgb_dimming: chop`. One of `4khz`, `2khz`, `1khz`, `500hz`.
+- **ignore_ack** (*Optional*, default `false`): Do not treat a missing ACK as an
+  error. Only meant for debugging, e.g. to check whether the chip reacts even
+  though it does not acknowledge.
 
 The component is `MULTI_CONF`: add one list entry per chip.
 
@@ -182,6 +185,9 @@ Notes & troubleshooting
 - **Log shows `No ACK for byte …`:** the chip does not answer. Check the
   pins, swap DAT/CLK, and make sure the bus has pull-ups (the internal ones are
   enabled, but bulbs usually have external ones).
+- **Always "No ACK" on a bench setup:** the chip sits on the mains side of the
+  bulb. Without a powered chip (and a common ground) it can never answer. Do
+  not power a bulb board from the mains for testing unless it is isolated.
 - **Lamp flickers at low brightness:** try `rgb_dimming: chop` with a higher
   `chop_frequency`, or `analog`.
 - **Colors are swapped:** adjust `channel:` — the OUT order is not the same on

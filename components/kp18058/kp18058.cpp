@@ -9,7 +9,8 @@ static const char *const TAG = "kp18058";
 
 static const uint8_t FRAME_LEN = 14;
 static const uint8_t MAX_RETRIES = 3;
-static const uint32_t HALF_BIT_US = 2;
+static const uint32_t HALF_BIT_US = 5;
+static const uint32_t RETRY_INTERVAL_MS = 2000;
 
 // Working modes (byte 0, bits 6-5)
 static const uint8_t MODE_STANDBY = 0b00;
@@ -37,6 +38,9 @@ void KP18058Component::set_channel_value(uint8_t channel, uint16_t value) {
 void KP18058Component::setup() {
   this->data_pin_->setup();
   this->clock_pin_->setup();
+  this->data_pin_->pin_mode(gpio::FLAG_OUTPUT);
+  this->clock_pin_->pin_mode(gpio::FLAG_OUTPUT);
+  this->data_is_input_ = false;
   this->bus_ready_ = this->bus_reset_();
   this->dirty_ = true;
 }
@@ -48,12 +52,18 @@ void KP18058Component::dump_config() {
   ESP_LOGCONFIG(TAG, "  RGB current: %.1f mA", (this->rgb_current_ + 1) * 1.5f);
   ESP_LOGCONFIG(TAG, "  CW current: %.1f mA", this->cw_current_ * 2.5f);
   ESP_LOGCONFIG(TAG, "  RGB dimming: %s", this->rgb_dimming_ == RGB_DIMMING_CHOP ? "chop" : "analog");
+  ESP_LOGCONFIG(TAG, "  Ignore ACK: %s", YESNO(this->ignore_ack_));
   ESP_LOGCONFIG(TAG, "  Bus: %s", this->bus_ready_ ? "ok" : "FAILED");
 }
 
 void KP18058Component::loop() {
   if (!this->dirty_)
     return;
+  // After a failure, wait a bit instead of hammering the bus (and the log) every loop.
+  const uint32_t now = millis();
+  if (this->failed_ && now - this->last_attempt_ < RETRY_INTERVAL_MS)
+    return;
+  this->last_attempt_ = now;
   if (!this->bus_ready_)
     this->bus_ready_ = this->bus_reset_();
   if (!this->bus_ready_) {
@@ -63,9 +73,11 @@ void KP18058Component::loop() {
   }
   if (this->send_frame_()) {
     this->dirty_ = false;
+    this->failed_ = false;
     this->status_clear_warning();
   } else {
-    this->bus_ready_ = false;  // reset the bus and retry on the next loop
+    this->bus_ready_ = false;  // reset the bus and retry later
+    this->failed_ = true;
     this->status_set_warning();
   }
 }
@@ -109,68 +121,81 @@ bool KP18058Component::send_frame_() {
 
 // ---- bit-banged bus ---------------------------------------------------------
 
-void KP18058Component::bus_release_(GPIOPin *pin) { pin->pin_mode(gpio::FLAG_INPUT | gpio::FLAG_PULLUP); }
+// SCL is always push-pull. SDA is push-pull while we send and only switched to an
+// input (with pull-up) for the ACK bit, so edges stay fast without external pull-ups.
+void KP18058Component::clock_(bool level) { this->clock_pin_->digital_write(level); }
 
-void KP18058Component::bus_drive_low_(GPIOPin *pin) {
-  pin->pin_mode(gpio::FLAG_OUTPUT);
-  pin->digital_write(false);
+void KP18058Component::data_out_(bool level) {
+  if (this->data_is_input_) {
+    this->data_pin_->pin_mode(gpio::FLAG_OUTPUT);
+    this->data_is_input_ = false;
+  }
+  this->data_pin_->digital_write(level);
+}
+
+bool KP18058Component::data_in_() {
+  if (!this->data_is_input_) {
+    this->data_pin_->pin_mode(gpio::FLAG_INPUT | gpio::FLAG_PULLUP);
+    this->data_is_input_ = true;
+  }
+  return this->data_pin_->digital_read();
 }
 
 bool KP18058Component::bus_reset_() {
-  this->bus_release_(this->data_pin_);
-  for (int i = 0; i < 9; i++) {
-    this->bus_release_(this->clock_pin_);
+  this->clock_pin_->pin_mode(gpio::FLAG_OUTPUT);
+  this->clock_(false);
+  // Clock out up to 9 pulses to release a slave that holds SDA low.
+  for (int i = 0; i < 9 && !this->data_in_(); i++) {
+    this->clock_(true);
     delayMicroseconds(HALF_BIT_US);
-    this->bus_drive_low_(this->clock_pin_);
+    this->clock_(false);
     delayMicroseconds(HALF_BIT_US);
-    if (this->data_pin_->digital_read())
-      break;
   }
-  if (!this->data_pin_->digital_read())
+  if (!this->data_in_())
     return false;
   // A start/stop pair keeps the chip from misreading the first real start condition.
   this->bus_start_();
   this->bus_stop_();
-  return this->data_pin_->digital_read() && this->clock_pin_->digital_read();
+  return true;
 }
 
 void KP18058Component::bus_start_() {
-  this->bus_release_(this->clock_pin_);
-  this->bus_release_(this->data_pin_);
+  this->data_out_(true);
+  this->clock_(true);
   delayMicroseconds(HALF_BIT_US);
-  this->bus_drive_low_(this->data_pin_);
+  this->data_out_(false);
   delayMicroseconds(HALF_BIT_US);
-  this->bus_drive_low_(this->clock_pin_);
+  this->clock_(false);
+  delayMicroseconds(HALF_BIT_US);
 }
 
 void KP18058Component::bus_stop_() {
+  this->data_out_(false);
   delayMicroseconds(HALF_BIT_US);
-  this->bus_drive_low_(this->data_pin_);
+  this->clock_(true);
   delayMicroseconds(HALF_BIT_US);
-  this->bus_release_(this->clock_pin_);
+  this->data_out_(true);
   delayMicroseconds(HALF_BIT_US);
-  this->bus_release_(this->data_pin_);
 }
 
 bool KP18058Component::bus_write_byte_(uint8_t value) {
   for (uint8_t mask = 0x80; mask != 0; mask >>= 1) {
-    if (value & mask)
-      this->bus_release_(this->data_pin_);
-    else
-      this->bus_drive_low_(this->data_pin_);
-    this->bus_release_(this->clock_pin_);
+    this->data_out_((value & mask) != 0);
+    delayMicroseconds(HALF_BIT_US / 2 + 1);
+    this->clock_(true);
     delayMicroseconds(HALF_BIT_US);
-    this->bus_drive_low_(this->clock_pin_);
-    delayMicroseconds(HALF_BIT_US);
+    this->clock_(false);
+    delayMicroseconds(HALF_BIT_US / 2 + 1);
   }
   // 9th clock: the chip pulls SDA low as ACK
-  this->bus_release_(this->data_pin_);
-  this->bus_release_(this->clock_pin_);
+  this->data_in_();
+  delayMicroseconds(HALF_BIT_US / 2 + 1);
+  this->clock_(true);
   delayMicroseconds(HALF_BIT_US);
-  bool ack = !this->data_pin_->digital_read();
-  delayMicroseconds(HALF_BIT_US);
-  this->bus_drive_low_(this->clock_pin_);
-  return ack;
+  bool ack = !this->data_in_();
+  this->clock_(false);
+  delayMicroseconds(HALF_BIT_US);  // let the chip release SDA before we drive it again
+  return ack || this->ignore_ack_;
 }
 
 }  // namespace kp18058

@@ -47,6 +47,7 @@ class KP18058Component : public Component {
   void set_rgb_current(uint8_t v) { this->rgb_current_ = v; }
   void set_cw_current(uint8_t v) { this->cw_current_ = v; }
   void set_rgb_dimming(RGBDimming v) { this->rgb_dimming_ = v; }
+  void set_ignore_ack(bool v) { this->ignore_ack_ = v; }
   void set_chop_frequency(ChopFrequency v) { this->chop_frequency_ = v; }
 
   /// Store a 10 bit value (0-1023); the frame is sent once from loop().
@@ -54,8 +55,9 @@ class KP18058Component : public Component {
 
  protected:
   // Bit-banged 2-wire bus (I2C-like, but with parity bits and no real addressing)
-  void bus_release_(GPIOPin *pin);
-  void bus_drive_low_(GPIOPin *pin);
+  void clock_(bool level);
+  void data_out_(bool level);
+  bool data_in_();
   bool bus_reset_();
   void bus_start_();
   void bus_stop_();
@@ -72,6 +74,10 @@ class KP18058Component : public Component {
   uint16_t values_[NUM_CHANNELS]{};
   bool dirty_{true};
   bool bus_ready_{false};
+  bool ignore_ack_{false};
+  bool data_is_input_{false};
+  bool failed_{false};
+  uint32_t last_attempt_{0};
 };
 
 }  // namespace kp18058

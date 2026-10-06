@@ -11,6 +11,7 @@ CONF_RGB_CURRENT = "rgb_current"
 CONF_CW_CURRENT = "cw_current"
 CONF_RGB_DIMMING = "rgb_dimming"
 CONF_CHOP_FREQUENCY = "chop_frequency"
+CONF_IGNORE_ACK = "ignore_ack"
 
 kp18058_ns = cg.esphome_ns.namespace("kp18058")
 KP18058Component = kp18058_ns.class_("KP18058Component", cg.Component)
@@ -57,6 +58,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_RGB_CURRENT, default=22.5): rgb_current,
         cv.Optional(CONF_CW_CURRENT, default=75.0): cw_current,
         cv.Optional(CONF_RGB_DIMMING, default="chop"): cv.enum(RGB_DIMMING, lower=True),
+        cv.Optional(CONF_IGNORE_ACK, default=False): cv.boolean,
         cv.Optional(CONF_CHOP_FREQUENCY, default="500hz"): cv.enum(
             CHOP_FREQUENCY, lower=True
         ),
@@ -74,4 +76,5 @@ async def to_code(config):
     cg.add(var.set_rgb_current(config[CONF_RGB_CURRENT]))
     cg.add(var.set_cw_current(config[CONF_CW_CURRENT]))
     cg.add(var.set_rgb_dimming(config[CONF_RGB_DIMMING]))
+    cg.add(var.set_ignore_ack(config[CONF_IGNORE_ACK]))
     cg.add(var.set_chop_frequency(config[CONF_CHOP_FREQUENCY]))
