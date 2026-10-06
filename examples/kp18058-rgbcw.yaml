@@ -1,0 +1,50 @@
+# Beispiel: Tuya RGBCW-Lampe (CB2L / BK7231N), übliche Pins: CLK=P7, DAT=P8
+external_components:
+  - source:
+      type: local
+      path: ../components
+
+# Ein Eintrag pro Chip - ein zweiter KP18058/KP18068 braucht nur eigene id + Pins.
+kp18058:
+  - id: driver1
+    data_pin: P8
+    clock_pin: P7
+    rgb_current: 22.5  # mA, 1.5-48 in 1.5er-Schritten (OUT1-3)
+    cw_current: 75     # mA, 0-77.5 in 2.5er-Schritten (OUT4-5)
+    rgb_dimming: chop  # analog | chop
+    chop_frequency: 500hz
+
+output:
+  # Kanalreihenfolge ist je Lampe verschieden - ggf. anpassen
+  - platform: kp18058
+    kp18058_id: driver1
+    id: out_r
+    channel: 3
+  - platform: kp18058
+    kp18058_id: driver1
+    id: out_g
+    channel: 1
+  - platform: kp18058
+    kp18058_id: driver1
+    id: out_b
+    channel: 2
+  - platform: kp18058
+    kp18058_id: driver1
+    id: out_cold
+    channel: 4
+  - platform: kp18058
+    kp18058_id: driver1
+    id: out_warm
+    channel: 5
+
+light:
+  - platform: rgbww
+    name: "Lamp"
+    red: out_r
+    green: out_g
+    blue: out_b
+    cold_white: out_cold
+    warm_white: out_warm
+    cold_white_color_temperature: 6500 K
+    warm_white_color_temperature: 2700 K
+    color_interlock: true

@@ -1,0 +1,27 @@
+# Claude Code
+.claude/
+
+# Template used for the README (not part of the project)
+DEMO.md
+
+# ESPHome / PlatformIO build output
+.esphome/
+.pioenvs/
+.piolibdeps/
+.platformio/
+build/
+secrets.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
