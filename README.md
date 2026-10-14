@@ -21,11 +21,16 @@ Every chip gets its own hub entry, so a device can drive **several chips**, each
 on its own pair of pins. The five outputs are exposed as ordinary ESPHome
 `FloatOutput`s and plug straight into `rgbww`, `rgbw`, `cwww`, `monochromatic`, …
 
-> **Status:** the protocol was cross-checked against the OpenBeken driver, the
-> [ESPHome PR #7685](https://github.com/esphome/esphome/pull/7685) and the
-> [Espressif lightbulb_driver](https://github.com/espressif/esp-iot-solution/blob/master/components/led/lightbulb_driver/drivers/kp18058/kp18058.c).
-> The component has **not yet been verified on real hardware** in this repo.
-> Reports welcome.
+> **Status:** early release. The protocol was cross-checked against the
+> OpenBeken driver, the [ESPHome PR #7685](https://github.com/esphome/esphome/pull/7685)
+> and the [Espressif lightbulb_driver](https://github.com/espressif/esp-iot-solution/blob/master/components/led/lightbulb_driver/drivers/kp18058/kp18058.c).
+> The component compiles and runs with ESPHome 2026.9.1 on an ESP32-C3, but it
+> has **not yet been verified against a powered KP18058**. Reports welcome.
+
+> **Safety:** the KP18058 sits on the mains side of a bulb, which is not
+> isolated. Never connect a bulb to the mains while it is wired to a programmer
+> or an ESP. Flash and test only unpowered from the mains (3.3 V from the
+> adapter), or use an isolation transformer if you know what you are doing.
 
 
 Installation
@@ -36,8 +41,11 @@ external_components:
   - source:
       type: git
       url: https://github.com/oxynatOr/esphome-kp18058
-      # or, for a local checkout:  type: local / path: components
+      ref: v0.1.0            # pin a release tag
+    components: [kp18058]
 ```
+
+For a local checkout use `type: local` with `path: components`.
 
 
 Hardware Setup
@@ -194,6 +202,14 @@ Notes & troubleshooting
   every bulb.
 - **KP18068:** treated as protocol-compatible by the community, but not
   verified here.
+
+
+Credits
+-------
+
+Protocol knowledge from the OpenBeken KP18058 driver (NewoPL), the unmerged
+[ESPHome PR #7685](https://github.com/esphome/esphome/pull/7685) and the
+Espressif `lightbulb_driver`. This is an independent implementation.
 
 
 <!-- LICENSE -->

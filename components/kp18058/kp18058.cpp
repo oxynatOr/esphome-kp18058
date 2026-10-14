@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 oxynatOr
+
 #include "kp18058.h"
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"

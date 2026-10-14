@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 oxynatOr
+
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome import pins
