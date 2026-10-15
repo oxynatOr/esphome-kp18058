@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 oxynatOr
+
 #pragma once
 
 #include "esphome/core/component.h"

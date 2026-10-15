@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 oxynatOr
+
+# Example: RGB + colour temperature light on the five outputs of a KP18058/KP18068 driver.
+# The pins, currents and the table are those of the Shelly Multicolor Bulb E27 Gen3 (ESP32-C3, driver KP18068 on GPIO4/GPIO5);
+# the table is the one its stock firmware uses (10-bit levels, OUT1 = blue, OUT2 = red, OUT3 = green, OUT4 = OUT5 = white).
+# Use your own pins, currents and, ideally, your own table. A complete working config for that bulb is in
+# https://github.com/oxynatOr/ShellyOTA (configs/shelly-rgbcct-bulb-g3).
+external_components:
+  - source:
+      type: local
+      path: ../components        # or: github://oxynatOr/esphome-kp18058
+    components: [kp18058, rgbw_ct_table]
+
+kp18058:
+  id: led_driver
+  data_pin: GPIO4
+  clock_pin: GPIO5
+  rgb_current: 9
+  cw_current: 27.5
+  rgb_dimming: analog
+  chop_frequency: 4khz
+
+output:
+  - {platform: kp18058, id: out_b, channel: 1}
+  - {platform: kp18058, id: out_r, channel: 2}
+  - {platform: kp18058, id: out_g, channel: 3}
+  - {platform: kp18058, id: out_w4, channel: 4}
+  - {platform: kp18058, id: out_w5, channel: 5}
+  - platform: template        # one white LED: drive OUT4 and OUT5 together
+    id: out_white
+    type: float
+    write_action:
+      - output.set_level: {id: out_w4, level: !lambda "return state;"}
+      - output.set_level: {id: out_w5, level: !lambda "return state;"}
+
+light:
+  - platform: rgbw_ct_table
+    name: "Light"
+    red: out_r
+    green: out_g
+    blue: out_b
+    white: out_white
+    gamma_correct: 1.0
+    default_transition_length: 3s
+    red_gain: 0.856
+    green_gain: 0.701
+    blue_gain: 0.749
+    table_max: 1023
+    color_temperature_table:
+      - {kelvin: 2700, red: 0,   green: 0,   blue: 0,   white: 1023}
+      - {kelvin: 3000, red: 325, green: 314, blue: 86,  white: 635}
+      - {kelvin: 3500, red: 314, green: 373, blue: 112, white: 483}
+      - {kelvin: 4000, red: 361, green: 511, blue: 182, white: 451}
+      - {kelvin: 4500, red: 100, green: 600, blue: 220, white: 494}
+      - {kelvin: 5000, red: 17,  green: 650, blue: 240, white: 490}
+      - {kelvin: 5700, red: 0,   green: 662, blue: 267, white: 441}
+      - {kelvin: 6000, red: 0,   green: 659, blue: 325, white: 426}
+      - {kelvin: 6500, red: 0,   green: 659, blue: 366, white: 425}
