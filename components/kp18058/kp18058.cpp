@@ -36,6 +36,7 @@ void KP18058Component::set_channel_value(uint8_t channel, uint16_t value) {
     return;
   this->values_[channel] = value;
   this->dirty_ = true;
+  this->enable_loop();
 }
 
 void KP18058Component::setup() {
@@ -60,8 +61,11 @@ void KP18058Component::dump_config() {
 }
 
 void KP18058Component::loop() {
-  if (!this->dirty_)
+  if (!this->dirty_) {
+    // Nothing to send: stay out of the main loop until a channel changes.
+    this->disable_loop();
     return;
+  }
   // After a failure, wait a bit instead of hammering the bus (and the log) every loop.
   const uint32_t now = millis();
   if (this->failed_ && now - this->last_attempt_ < RETRY_INTERVAL_MS)
@@ -71,10 +75,17 @@ void KP18058Component::loop() {
     this->bus_ready_ = this->bus_reset_();
   if (!this->bus_ready_) {
     ESP_LOGE(TAG, "Bus reset failed (SDA stuck low?)");
+    this->failed_ = true;
     this->status_set_warning();
     return;
   }
-  if (this->send_frame_()) {
+  // A frame is always written from byte 0. A byte without ACK must not be repeated on its own:
+  // if the chip did receive it, every following byte would land one register too far.
+  // So the whole frame is sent again instead.
+  bool ok = false;
+  for (uint8_t attempt = 0; attempt < MAX_RETRIES && !ok; attempt++)
+    ok = this->send_frame_();
+  if (ok) {
     this->dirty_ = false;
     this->failed_ = false;
     this->status_clear_warning();
@@ -112,11 +123,9 @@ bool KP18058Component::send_frame_() {
   this->bus_start_();
   bool ok = true;
   for (uint8_t i = 0; i < FRAME_LEN && ok; i++) {
-    ok = false;
-    for (uint8_t attempt = 0; attempt < MAX_RETRIES && !ok; attempt++)
-      ok = this->bus_write_byte_(f[i]);
+    ok = this->bus_write_byte_(f[i]);
     if (!ok)
-      ESP_LOGE(TAG, "No ACK for byte %u (0x%02X)", i, f[i]);
+      ESP_LOGW(TAG, "No ACK for byte %u (0x%02X)", i, f[i]);
   }
   this->bus_stop_();
   return ok;
