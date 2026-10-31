@@ -14,18 +14,25 @@
 
 `kp18058` is an ESPHome external component for the **KP18058** (and, reportedly,
 protocol-compatible **KP18068**) LED driver, found in many Tuya RGBCW smart bulbs
-next to a CB2L / BK7231N module. The chip has five constant-current outputs with
+next to a CB2L / BK7231N module and in the Shelly Multicolor Bulb E27 Gen3
+(KP18068, ESP32-C3). The chip has five constant-current outputs with
 10-bit grayscale each and is controlled over a proprietary, I²C-like 2-wire bus.
 
 Every chip gets its own hub entry, so a device can drive **several chips**, each
 on its own pair of pins. The five outputs are exposed as ordinary ESPHome
 `FloatOutput`s and plug straight into `rgbww`, `rgbw`, `cwww`, `monochromatic`, …
 
+The repository also contains [`rgbw_ct_table`](components/rgbw_ct_table/README.md),
+a light platform for lamps with red, green, blue and **one** white LED that
+makes the colour temperature from a calibration table (for example the table
+of the lamp's stock firmware). It works with any `FloatOutput`s.
+
 > **Status:** early release. The protocol was cross-checked against the
 > OpenBeken driver, the [ESPHome PR #7685](https://github.com/esphome/esphome/pull/7685)
 > and the [Espressif lightbulb_driver](https://github.com/espressif/esp-iot-solution/blob/master/components/led/lightbulb_driver/drivers/kp18058/kp18058.c).
-> The component compiles and runs with ESPHome 2026.9.1 on an ESP32-C3, but it
-> has **not yet been verified against a powered KP18058**. Reports welcome.
+> The configuration validates with ESPHome 2026.10.0-dev and the component ran
+> with ESPHome 2026.9.1 on an ESP32-C3 (Shelly Multicolor Bulb E27 Gen3), but
+> it has **not yet been verified against a powered chip**. Reports welcome.
 
 > **Safety:** the KP18058 sits on the mains side of a bulb, which is not
 > isolated. Never connect a bulb to the mains while it is wired to a programmer
@@ -42,7 +49,7 @@ external_components:
       type: git
       url: https://github.com/oxynatOr/esphome-kp18058
       ref: v0.1.0            # pin a release tag
-    components: [kp18058]
+    components: [kp18058]   # add rgbw_ct_table if you use it
 ```
 
 For a local checkout use `type: local` with `path: components`.
@@ -56,10 +63,10 @@ condition, 9th-bit ACK) but is *not* standard I²C: every byte carries a parity
 bit and there is no device address, so the hardware I²C peripheral cannot be
 used. The component bit-bangs the bus on any two GPIOs.
 
-| Signal | Typical CB2L / BK7231N bulb pin |
-| ---    | ---                             |
-| CLK    | P7                              |
-| DAT    | P8                              |
+| Signal | Typical CB2L / BK7231N bulb | Shelly Multicolor Bulb E27 Gen3 |
+| ---    | ---                         | ---                             |
+| CLK    | P7                          | GPIO5                           |
+| DAT    | P8                          | GPIO4                           |
 
 The channel order (which `OUTx` drives red, green, blue, cold, warm) differs from
 bulb to bulb. Map it with the `channel:` option of the outputs.
@@ -68,10 +75,13 @@ bulb to bulb. Map it with the `channel:` option of the outputs.
 Tested devices
 --------------
 
-| Manufacturer | Device | Chip | Tested on hardware |
+| Manufacturer | Device | Chip | Status |
 | ---          | ---    | ---  | --- |
-| –            | –      | KP18058 | not yet |
-| –            | –      | KP18068 | not yet (assumed protocol-compatible) |
+| Shelly       | Multicolor Bulb E27 Gen3 (ESP32-C3) | KP18068 | Pins, currents, channel order and colour temperature table taken from the stock firmware 2.0.1; config validates, runs on the ESP32-C3. Light output with a powered chip **not verified yet**. |
+| Tuya (various) | RGBCW bulbs with CB2L / BK7231N | KP18058 | not tested yet |
+
+The KP18068 is treated as protocol-compatible with the KP18058 by the
+community; this is not verified with a powered chip yet.
 
 
 Component / Hub
@@ -126,14 +136,17 @@ output:
 - **kp18058_id** (*Optional*): The chip this output belongs to. Required when
   more than one `kp18058` is configured.
 - **channel** (***Required***): Output pin of the chip, `1..5` (OUT1–OUT5).
-  OUT1–3 share `rgb_current`, OUT4–5 share `cw_current`.
+  OUT1–3 share `rgb_current`, OUT4–5 share `cw_current`. Each channel of a chip
+  can be used by only one output (checked during validation).
 
 All accept the standard ESPHome
 [float output options](https://esphome.io/components/output/#config-output).
 
 Values are sent as 10-bit grayscale (0–1023). Changes of several outputs in the
-same loop cycle are combined into a **single** bus frame. When all outputs are
-zero the chip is put into standby.
+same loop cycle are combined into a **single** bus frame, so setting two outputs
+at once (e.g. OUT4 and OUT5 for one white LED) costs one transfer. When nothing
+changes, the component does not run in the main loop at all. When all outputs
+are zero the chip is put into standby.
 
 
 Examples
@@ -141,7 +154,9 @@ Examples
 
 Ready-to-use YAML in [`examples/`](examples/):
 
-- [`kp18058-rgbcw.yaml`](examples/kp18058-rgbcw.yaml) — RGBCW bulb with one chip.
+- [`kp18058-rgbcw.yaml`](examples/kp18058-rgbcw.yaml) — Tuya RGBCW bulb with one chip and the `rgbww` light.
+- [`rgbw-ct-table.yaml`](examples/rgbw-ct-table.yaml) — Shelly Multicolor Bulb E27 Gen3: KP18068, OUT4 + OUT5 driven
+  together as one white LED, `rgbw_ct_table` light with the stock colour temperature table.
 
 Two chips on one device:
 
@@ -190,9 +205,9 @@ Notes & troubleshooting
 
 - **Log shows `Bus reset failed`:** DAT is stuck low. Check wiring and that no
   other component drives the pins.
-- **Log shows `No ACK for byte …`:** the chip does not answer. Check the
-  pins, swap DAT/CLK, and make sure the bus has pull-ups (the internal ones are
-  enabled, but bulbs usually have external ones).
+- **Log shows `No ACK for byte …`:** the chip does not answer. The whole frame
+  is sent again up to 3 times, after that the component retries every 2 s and
+  sets a warning status. Check the pins and swap DAT/CLK.
 - **Always "No ACK" on a bench setup:** the chip sits on the mains side of the
   bulb. Without a powered chip (and a common ground) it can never answer. Do
   not power a bulb board from the mains for testing unless it is isolated.
@@ -200,8 +215,10 @@ Notes & troubleshooting
   `chop_frequency`, or `analog`.
 - **Colors are swapped:** adjust `channel:` — the OUT order is not the same on
   every bulb.
-- **KP18068:** treated as protocol-compatible by the community, but not
-  verified here.
+- **Two outputs on one channel:** validation fails with
+  `Channel N of '<id>' is used by more than one output`. Give each output its
+  own channel, or drive two channels from one template output as in
+  [`rgbw-ct-table.yaml`](examples/rgbw-ct-table.yaml).
 
 
 Credits
